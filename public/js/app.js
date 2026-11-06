@@ -53,7 +53,7 @@ function createCard(task) {
     card.dataset.id = task.id;
     
     const priorityColors = ['#666', '#4caf50', '#2196f3', '#ff9800', '#f44336'];
-    const priorityLabels = ['普通', '低', '中', '高', '紧急'];
+    const priorityLabels = ['Обычный', 'Низкий', 'Средний', 'Высокий', 'Критический'];
     
     card.innerHTML = `
         <div class="card-header">
@@ -62,7 +62,7 @@ function createCard(task) {
         <div class="card-title">${escapeHtml(task.title)}</div>
         ${task.body ? `<div class="card-body">${escapeHtml(task.body.substring(0, 50))}${task.body.length > 50 ? '...' : ''}</div>` : ''}
         <div class="card-footer">
-            <span class="assignee">${task.assignee || '未分配'}</span>
+            <span class="assignee">${task.assignee || 'Не назначен'}</span>
             <span class="time">${formatTime(task.created_at)}</span>
         </div>
     `;
@@ -83,7 +83,7 @@ function openEditModal(task = null) {
     const deleteBtn = document.getElementById('deleteBtn');
     
     if (task) {
-        document.getElementById('modalTitle').textContent = '编辑任务';
+        document.getElementById('modalTitle').textContent = 'Редактировать задачу';
         title.value = task.title;
         body.value = task.body || '';
         status.value = task.status;
@@ -91,7 +91,7 @@ function openEditModal(task = null) {
         priority.value = task.priority;
         deleteBtn.style.display = 'block';
     } else {
-        document.getElementById('modalTitle').textContent = '新建任务';
+        document.getElementById('modalTitle').textContent = 'Новая задача';
         title.value = '';
         body.value = '';
         status.value = 'todo';
