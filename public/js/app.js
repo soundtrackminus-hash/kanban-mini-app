@@ -3,7 +3,7 @@ let tg = window.Telegram.WebApp;
 tg.expand();
 tg.setHeaderColor('#1a1a2e');
 
-const API_BASE = 'http://192.168.0.23:8766';
+const API_BASE = 'https://peterson-external-admissions-expanding.trycloudflare.com';
 let tasks = [];
 let editingTask = null;
 
