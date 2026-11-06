@@ -19,7 +19,7 @@ const columns = {
 // Load tasks
 async function loadTasks() {
     try {
-        const res = await fetch(`${API_BASE}/api/tasks`);
+        const res = await fetch(`${API_BASE}/api/tasks-data`);
         tasks = await res.json();
         renderBoard();
     } catch (e) {
