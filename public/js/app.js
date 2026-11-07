@@ -3,7 +3,7 @@ let tg = window.Telegram.WebApp;
 tg.expand();
 tg.setHeaderColor('#1a1a2e');
 
-const API_BASE = 'http://192.168.0.23:8766';
+const API_BASE = 'https://qzytyvfdymcwnoxxvdln.supabase.co/rest/v1';
 let tasks = [];
 let editingTask = null;
 
@@ -19,7 +19,12 @@ const columns = {
 // Load tasks
 async function loadTasks() {
     try {
-        const res = await fetch('tasks.json');
+        const res = await fetch(API_BASE, {
+            headers: {
+                'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z'
+            }
+        });
         tasks = await res.json();
         renderBoard();
     } catch (e) {
@@ -124,19 +129,26 @@ async function saveTask(e) {
         return;
     }
     
+    const headers = {
+        'Content-Type': 'application/json',
+        'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+        'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+        'Prefer': 'return=representation'
+    };
+    
     try {
         if (editingTask) {
             // Update existing
-            await fetch(`${API_BASE}/api/tasks/${editingTask.id}`, {
+            await fetch(`${API_BASE}/tasks?id=eq.${editingTask.id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ title, body, status, assignee, priority })
             });
         } else {
             // Create new
-            await fetch(`${API_BASE}/api/tasks`, {
+            await fetch(`${API_BASE}/tasks`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify({ title, body, status, assignee, priority })
             });
         }
@@ -154,7 +166,13 @@ async function deleteTask() {
     if (!editingTask) return;
     
     try {
-        await fetch(`${API_BASE}/api/tasks/${editingTask.id}`, { method: 'DELETE' });
+        await fetch(`${API_BASE}/tasks?id=eq.${editingTask.id}`, {
+            method: 'DELETE',
+            headers: {
+                'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z'
+            }
+        });
         closeModal();
         await loadTasks();
         tg.HapticFeedback.notificationOccurred('success');
@@ -219,9 +237,14 @@ function setupDragDrop() {
                 const task = tasks.find(t => t.id === taskId);
                 if (task && task.status !== newStatus) {
                     try {
-                        await fetch(`${API_BASE}/api/tasks/${taskId}`, {
+                        await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
                             method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                                'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                                'Prefer': 'return=representation'
+                            },
                             body: JSON.stringify({ status: newStatus })
                         });
                         await loadTasks();
