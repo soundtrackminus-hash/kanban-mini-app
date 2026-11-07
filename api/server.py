@@ -4,14 +4,13 @@ API для доступа к Kanban базе данных
 """
 import sqlite3
 import json
+import time
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib.parse
 from datetime import datetime
 
 DB_PATH = Path.home() / ".hermes/kanban.db"
-
-
 def normalize_task(task_dict):
     """Normalize task data for the mini-app client."""
     normalized = dict(task_dict)
@@ -60,9 +59,15 @@ def normalize_task(task_dict):
                 normalized[field] = int(val)
 
     return normalized
-
-
 class KanbanAPIHandler(BaseHTTPRequestHandler):
+    def do_OPTIONS(self):
+        """Handle CORS preflight requests"""
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.end_headers()
+
     def do_GET(self):
         """Получение задач"""
         parsed = urllib.parse.urlparse(self.path)
@@ -72,9 +77,21 @@ class KanbanAPIHandler(BaseHTTPRequestHandler):
             tasks = self.get_tasks(params)
             tasks = [normalize_task(t) for t in tasks]
             self.send_json(tasks)
+        elif parsed.path == '/api/tasks-data':
+            tasks = self.get_tasks(params)
+            tasks = [normalize_task(t) for t in tasks]
+            self.send_json(tasks)
         elif parsed.path == '/api/stats':
             stats = self.get_stats()
             self.send_json(stats)
+        elif parsed.path.startswith('/api/tasks/') and '/check-points' in parsed.path:
+            task_id = parsed.path.split('/api/tasks/')[1].split('/check-points')[0]
+            cps = self.get_check_points(task_id)
+            self.send_json(cps)
+        elif parsed.path.startswith('/api/check-points/'):
+            cp_id = parsed.path.split('/')[-1]
+            cp = self.get_check_point(cp_id)
+            self.send_json(cp)
         else:
             self.send_error(404)
 
@@ -90,6 +107,15 @@ class KanbanAPIHandler(BaseHTTPRequestHandler):
             task = self.update_task()
             task = normalize_task(task)
             self.send_json(task)
+        elif parsed.path.startswith('/api/tasks/') and parsed.path.endswith('/check-points'):
+            task_id = parsed.path.split('/api/tasks/')[1].split('/check-points')[0]
+            data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            cp = self.create_check_point(task_id, data.get('label', 'Чек-поинт'), data.get('completed_by', 'miniapp'))
+            self.send_json(cp, 201)
+        elif parsed.path.startswith('/api/check-points/'):
+            cp_id = parsed.path.split('/')[-1]
+            cp = self.get_check_point(cp_id)
+            self.send_json(cp)
         else:
             self.send_error(404)
 
@@ -100,6 +126,13 @@ class KanbanAPIHandler(BaseHTTPRequestHandler):
             task = self.update_task()
             task = normalize_task(task)
             self.send_json(task)
+        elif parsed.path.startswith('/api/tasks/') and parsed.path.endswith('/check-points'):
+            task_id = parsed.path.split('/')[-2]
+            data = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            cp_label = data.get('label', '')
+            completed_by = data.get('completed_by', 'miniapp')
+            result = self.complete_check_point(task_id, cp_label, completed_by)
+            self.send_json(result)
         else:
             self.send_error(404)
 
@@ -226,6 +259,57 @@ class KanbanAPIHandler(BaseHTTPRequestHandler):
         parts = parsed.path.strip('/').split('/')
         return parts[-1] if len(parts) > 2 else None
 
+    def get_check_points(self, task_id):
+        """Получить все чек-поинты для задачи"""
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM check_points WHERE task_id = ? ORDER BY created_at ASC", (task_id,))
+        check_points = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return check_points
+
+    def get_check_point(self, cp_id):
+        """Получить чек-поинт по ID"""
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM check_points WHERE id = ?", (cp_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def create_check_point(self, task_id, label, completed_by='miniapp'):
+        """Создать новый чек-поинт"""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        created_at = int(time.time())
+        cursor.execute(
+            "INSERT INTO check_points (task_id, label, created_at, completed_by) VALUES (?, ?, ?, ?)",
+            (task_id, label, created_at, completed_by)
+        )
+        conn.commit()
+        cp_id = cursor.lastrowid
+        conn.close()
+        return {'id': cp_id, 'task_id': task_id, 'label': label}
+
+    def complete_check_point(self, task_id, cp_label, completed_by='miniapp'):
+        """Отметить чек-поинт как выполненный"""
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        completed_at = int(time.time())
+        cursor.execute(
+            "UPDATE check_points SET completed_at = ?, completed_by = ? WHERE task_id = ? AND label = ? AND completed_at IS NULL",
+            (completed_at, completed_by, task_id, cp_label)
+        )
+        conn.commit()
+        cursor.execute("SELECT COUNT(*) FROM check_points WHERE task_id = ?", (task_id,))
+        total = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM check_points WHERE task_id = ? AND completed_at IS NOT NULL", (task_id,))
+        completed = cursor.fetchone()[0]
+        conn.close()
+        return {'total': total, 'completed': completed, 'completion_pct': round(completed / total * 100, 1) if total > 0 else 0}
+
     def send_json(self, data, status=200):
         """Отправка JSON ответа"""
         self.send_response(status)
@@ -237,13 +321,9 @@ class KanbanAPIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Логирование"""
         pass  # Отключаем лог для чистоты вывода
-
-
 def run_server(port=8766):
     server = HTTPServer(('0.0.0.0', port), KanbanAPIHandler)
     print(f"Kanban API запущен на порту {port}")
     server.serve_forever()
-
-
 if __name__ == '__main__':
     run_server()
