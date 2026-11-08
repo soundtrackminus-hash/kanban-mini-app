@@ -197,61 +197,59 @@ function updateStats() {
     });
 }
 
-// Drag and drop — делегирование через document, слушатели только один раз
+// Drag and drop — touch events only
 let draggedCard = null;
-let touchStartY = 0;
+let dragStartPos = { x: 0, y: 0 };
 
-// Touch events for mobile (Telegram WebView)
 document.addEventListener('touchstart', (e) => {
     const card = e.target.closest('.task-card');
     if (!card) return;
     
-    draggedCard = card;
-    touchStartY = e.touches[0].clientY;
+    // Remember start position for tap vs drag detection
+    dragStartPos.x = e.touches[0].clientX;
+    dragStartPos.y = e.touches[0].clientY;
     
-    // Delay adding dragging class to avoid accidental drags
-    clearTimeout(card._dragTimeout);
-    card._dragTimeout = setTimeout(() => {
-        if (draggedCard === card) {
-            card.classList.add('dragging');
-        }
-    }, 150);
+    draggedCard = card;
 }, { passive: true });
 
 document.addEventListener('touchmove', (e) => {
     if (!draggedCard) return;
-    e.preventDefault(); // Prevent scroll
-    
-    // Clear the delay timeout since we're moving
-    clearTimeout(draggedCard._dragTimeout);
-    draggedCard.classList.add('dragging');
     
     const touch = e.touches[0];
-    const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
+    const deltaX = Math.abs(touch.clientX - dragStartPos.x);
+    const deltaY = Math.abs(touch.clientY - dragStartPos.y);
     
-    Object.values(columns).forEach(c => c.classList.remove('drag-over'));
-    if (col) col.classList.add('drag-over');
+    // Start dragging only after moving more than threshold
+    if (deltaX > 5 || deltaY > 5) {
+        e.preventDefault();
+        draggedCard.classList.add('dragging');
+        
+        const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
+        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+        if (col) col.classList.add('drag-over');
+    }
 }, { passive: false });
 
 document.addEventListener('touchend', async (e) => {
     if (!draggedCard) return;
     
-    clearTimeout(draggedCard._dragTimeout);
-    draggedCard.classList.remove('dragging');
-    
-    // Check if actually dragged (not just tapped)
     const touch = e.changedTouches[0];
-    const deltaX = Math.abs(touch.clientX - (draggedCard._startX || touch.clientX));
-    const deltaY = Math.abs(touch.clientY - touchStartY);
+    const deltaX = Math.abs(touch.clientX - dragStartPos.x);
+    const deltaY = Math.abs(touch.clientY - dragStartPos.y);
     
-    // If barely moved, treat as tap
-    if (deltaX < 10 && deltaY < 10) {
+    // If barely moved, treat as tap — do nothing (let click handler work)
+    if (deltaX < 5 && deltaY < 5) {
+        draggedCard.classList.remove('dragging');
+        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
         draggedCard = null;
         return;
     }
     
-    const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
+    draggedCard.classList.remove('dragging');
     const taskId = draggedCard.dataset.id;
+    draggedCard = null;
+    
+    const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
     
     if (col) {
         const newStatus = col.dataset.status;
@@ -278,17 +276,7 @@ document.addEventListener('touchend', async (e) => {
     }
     
     Object.values(columns).forEach(c => c.classList.remove('drag-over'));
-    draggedCard = null;
 });
-
-// Track start position for tap detection
-document.addEventListener('touchstart', (e) => {
-    const card = e.target.closest('.task-card');
-    if (card) {
-        card._startX = e.touches[0].clientX;
-        card._startY = e.touches[0].clientY;
-    }
-}, { passive: true });
 
 // Utility functions
 function escapeHtml(text) {
