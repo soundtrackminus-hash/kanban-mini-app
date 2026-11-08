@@ -145,11 +145,12 @@ async function saveTask(e) {
                 body: JSON.stringify({ title, body, status, assignee, priority })
             });
         } else {
-            // Create new
+            // Create new - generate UUID for id
+            const newId = 't_' + Math.random().toString(36).substr(2, 9);
             await fetch(`${API_BASE}/tasks`, {
                 method: 'POST',
                 headers: headers,
-                body: JSON.stringify({ title, body, status, assignee, priority })
+                body: JSON.stringify({ id: newId, title, body, status, assignee, priority })
             });
         }
         
