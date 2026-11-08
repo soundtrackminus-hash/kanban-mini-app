@@ -25,7 +25,8 @@ async function loadTasks() {
                 'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z'
             }
         });
-        tasks = await res.json();
+        const data = await res.json();
+        tasks = data.data; // Extract tasks array from Supabase response
         renderBoard();
     } catch (e) {
         console.error('Load failed:', e);
