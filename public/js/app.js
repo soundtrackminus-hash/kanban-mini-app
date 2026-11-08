@@ -197,67 +197,65 @@ function updateStats() {
     });
 }
 
-// Drag and drop
-let draggedCard = null;
+// Drag and drop — делегирование через document, слушатели только один раз
+document.addEventListener('dragstart', (e) => {
+    const card = e.target.closest('.task-card');
+    if (!card) return;
+    draggedCard = card;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+});
 
-function setupDragDrop() {
-    document.querySelectorAll('.task-card').forEach(card => {
-        card.draggable = true;
-        
-        card.addEventListener('dragstart', (e) => {
-            draggedCard = card;
-            card.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-        });
-        
-        card.addEventListener('dragend', () => {
-            card.classList.remove('dragging');
-            draggedCard = null;
-        });
+document.addEventListener('dragend', (e) => {
+    const card = e.target.closest('.task-card');
+    if (!card) return;
+    card.classList.remove('dragging');
+    draggedCard = null;
+});
+
+Object.values(columns).forEach(col => {
+    col.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        col.classList.add('drag-over');
     });
-    
-    Object.values(columns).forEach(col => {
-        col.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            col.classList.add('drag-over');
-        });
-        
-        col.addEventListener('dragleave', () => {
+
+    col.addEventListener('dragleave', (e) => {
+        if (!col.contains(e.relatedTarget)) {
             col.classList.remove('drag-over');
-        });
-        
-        col.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            col.classList.remove('drag-over');
-            
-            if (draggedCard) {
-                const taskId = draggedCard.dataset.id;
-                const newStatus = col.dataset.status;
-                
-                const task = tasks.find(t => t.id === taskId);
-                if (task && task.status !== newStatus) {
-                    try {
-                        await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
-                            method: 'PUT',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                                'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                                'Prefer': 'return=representation'
-                            },
-                            body: JSON.stringify({ status: newStatus, id: taskId })
-                        });
-                        await loadTasks();
-                        tg.HapticFeedback.impactOccurred('medium');
-                    } catch (err) {
-                        tg.showPopup({ message: 'Ошибка перемещения' });
-                    }
-                }
-            }
-        });
+        }
     });
-}
+
+    col.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        col.classList.remove('drag-over');
+
+        if (!draggedCard) return;
+
+        const taskId = draggedCard.dataset.id;
+        const newStatus = col.dataset.status;
+
+        const task = tasks.find(t => t.id === taskId);
+        if (!task || task.status === newStatus) return;
+
+        try {
+            await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                    'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                    'Prefer': 'return=representation'
+                },
+                body: JSON.stringify({ status: newStatus, id: taskId })
+            });
+            await loadTasks();
+            tg.HapticFeedback.impactOccurred('medium');
+        } catch (err) {
+            tg.showPopup({ message: 'Ошибка перемещения' });
+        }
+    });
+});
 
 // Utility functions
 function escapeHtml(text) {
@@ -286,4 +284,4 @@ document.getElementById('taskModal').onclick = (e) => {
 };
 
 // Initialize
-loadTasks().then(setupDragDrop);
+loadTasks();
