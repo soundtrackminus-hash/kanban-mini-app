@@ -1,7 +1,17 @@
 // Telegram Mini App - Kanban Board
-let tg = window.Telegram.WebApp;
-tg.expand();
-tg.setHeaderColor('#1a1a2e');
+let tg = window.Telegram?.WebApp;
+
+if (!tg) {
+    console.error('Telegram WebApp not available');
+} else {
+    tg.expand();
+    tg.setHeaderColor('#1a1a2e');
+    
+    // Initialize after Telegram is ready
+    if (tg.isVersionAtLeast('6.1')) {
+        tg.onEvent('ready', () => console.log('Telegram WebApp ready'));
+    }
+}
 
 const API_BASE = 'https://qzytyvfdymcwnoxxvdln.supabase.co/rest/v1';
 let tasks = [];
@@ -16,36 +26,71 @@ const columns = {
     'canceled': document.getElementById('canceled')
 };
 
+console.log('Columns initialized:', columns);
+console.log('Todo column exists:', !!columns.todo);
+
 // Load tasks
 async function loadTasks() {
     try {
+        console.log('Loading tasks from API...');
         const res = await fetch(`${API_BASE}/tasks`, {
+            method: 'GET',
             headers: {
+                'Content-Type': 'application/json',
                 'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
                 'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z'
             }
         });
+        
+        console.log('Response status:', res.status);
+        
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+        }
+        
         const data = await res.json();
-        tasks = Array.isArray(data) ? data : (data.data || []); // Handle both array and {data:[]} responses
+        console.log('Data received, type:', typeof data, 'isArray:', Array.isArray(data));
+        
+        tasks = Array.isArray(data) ? data : (data.data || []);
+        console.log('Tasks loaded:', tasks.length);
+        
         renderBoard();
+        
+        if (tg?.MainButton) {
+            tg.MainButton.setText(`Загружено задач: ${tasks.length}`);
+            tg.MainButton.show();
+        }
     } catch (e) {
         console.error('Load failed:', e);
-        tg.showPopup({ message: 'Ошибка загрузки задач' });
+        if (tg) {
+            tg.showPopup({
+                message: `Ошибка загрузки: ${e.message}`,
+                buttons: [{type: 'ok'}]
+            });
+        }
     }
 }
 
 // Render board
 function renderBoard() {
+    if (!columns.todo) {
+        console.error('Column elements not found!');
+        return;
+    }
+    
     // Clear all columns
-    Object.values(columns).forEach(col => col.innerHTML = '');
+    Object.values(columns).forEach(col => {
+        if (col) col.innerHTML = '';
+    });
     
     // Sort by priority then created
     const sorted = [...tasks].sort((a, b) => b.priority - a.priority);
     
     sorted.forEach(task => {
         const card = createCard(task);
-        if (columns[task.status]) {
-            columns[task.status].appendChild(card);
+        const col = columns[task.status];
+        if (col) {
+            col.appendChild(card);
         }
     });
     
@@ -57,6 +102,7 @@ function createCard(task) {
     const card = document.createElement('div');
     card.className = 'task-card';
     card.dataset.id = task.id;
+    card.draggable = true;
     
     const priorityColors = ['#666', '#4caf50', '#2196f3', '#ff9800', '#f44336'];
     const priorityLabels = ['Обычный', 'Низкий', 'Средний', 'Высокий', 'Критический'];
@@ -73,7 +119,11 @@ function createCard(task) {
         </div>
     `;
     
-    card.onclick = () => openEditModal(task);
+    card.onclick = (e) => {
+        if (!card.classList.contains('dragging')) {
+            openEditModal(task);
+        }
+    };
     return card;
 }
 
@@ -126,7 +176,7 @@ async function saveTask(e) {
     const priority = parseInt(document.getElementById('taskPriority').value);
     
     if (!title) {
-        tg.showPopup({ message: 'Введите название задачи' });
+        if (tg) tg.showPopup({ message: 'Введите название задачи', buttons: [{type: 'ok'}] });
         return;
     }
     
@@ -139,33 +189,32 @@ async function saveTask(e) {
     
     try {
         if (editingTask && editingTask.id) {
-            // Update existing
             await fetch(`${API_BASE}/tasks?id=eq.${editingTask.id}`, {
                 method: 'PUT',
-                headers: headers,
+                headers,
                 body: JSON.stringify({ id: editingTask.id, title, body, status, assignee, priority })
             });
         } else {
-            // Create new - generate UUID for id
             const newId = 't_' + Math.random().toString(36).substr(2, 9);
             await fetch(`${API_BASE}/tasks`, {
                 method: 'POST',
-                headers: headers,
+                headers,
                 body: JSON.stringify({ id: newId, title, body, status, assignee, priority })
             });
         }
         
         closeModal();
         await loadTasks();
-        tg.HapticFeedback.impactOccurred('light');
+        if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
     } catch (e) {
-        tg.showPopup({ message: 'Ошибка сохранения' });
+        console.error('Save error:', e);
+        if (tg) tg.showPopup({ message: 'Ошибка сохранения', buttons: [{type: 'ok'}] });
     }
 }
 
 // Delete task
 async function deleteTask() {
-    if (!editingTask) return;
+    if (!editingTask || !editingTask.id) return;
     
     try {
         await fetch(`${API_BASE}/tasks?id=eq.${editingTask.id}`, {
@@ -177,9 +226,10 @@ async function deleteTask() {
         });
         closeModal();
         await loadTasks();
-        tg.HapticFeedback.notificationOccurred('success');
+        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
     } catch (e) {
-        tg.showPopup({ message: 'Ошибка удаления' });
+        console.error('Delete error:', e);
+        if (tg) tg.showPopup({ message: 'Ошибка удаления', buttons: [{type: 'ok'}] });
     }
 }
 
@@ -188,13 +238,15 @@ function updateStats() {
     const total = tasks.length;
     const done = tasks.filter(t => t.status === 'done').length;
     
-    document.querySelector('#stats strong').textContent = total;
-    document.querySelector('.done-count').textContent = done;
+    const totalEl = document.querySelector('#stats strong');
+    const doneEl = document.querySelector('.done-count');
+    if (totalEl) totalEl.textContent = total;
+    if (doneEl) doneEl.textContent = done;
     
-    // Update column counts
     Object.keys(columns).forEach(status => {
         const count = tasks.filter(t => t.status === status).length;
-        document.getElementById(`count-${status}`).textContent = count;
+        const el = document.getElementById(`count-${status}`);
+        if (el) el.textContent = count;
     });
 }
 
@@ -206,10 +258,8 @@ document.addEventListener('touchstart', (e) => {
     const card = e.target.closest('.task-card');
     if (!card) return;
     
-    // Remember start position for tap vs drag detection
     dragStartPos.x = e.touches[0].clientX;
     dragStartPos.y = e.touches[0].clientY;
-    
     draggedCard = card;
 }, { passive: true });
 
@@ -220,13 +270,12 @@ document.addEventListener('touchmove', (e) => {
     const deltaX = Math.abs(touch.clientX - dragStartPos.x);
     const deltaY = Math.abs(touch.clientY - dragStartPos.y);
     
-    // Start dragging only after moving more than threshold
     if (deltaX > 5 || deltaY > 5) {
         e.preventDefault();
         draggedCard.classList.add('dragging');
         
         const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
-        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+        Object.values(columns).forEach(c => c?.classList.remove('drag-over'));
         if (col) col.classList.add('drag-over');
     }
 }, { passive: false });
@@ -238,10 +287,9 @@ document.addEventListener('touchend', async (e) => {
     const deltaX = Math.abs(touch.clientX - dragStartPos.x);
     const deltaY = Math.abs(touch.clientY - dragStartPos.y);
     
-    // If barely moved, treat as tap — do nothing (let click handler work)
     if (deltaX < 5 && deltaY < 5) {
         draggedCard.classList.remove('dragging');
-        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+        Object.values(columns).forEach(c => c?.classList.remove('drag-over'));
         draggedCard = null;
         return;
     }
@@ -269,14 +317,15 @@ document.addEventListener('touchend', async (e) => {
                     body: JSON.stringify({ status: newStatus, id: taskId })
                 });
                 await loadTasks();
-                tg.HapticFeedback.impactOccurred('medium');
+                if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
             } catch (err) {
-                tg.showPopup({ message: 'Ошибка перемещения' });
+                console.error('Move error:', err);
+                if (tg) tg.showPopup({ message: 'Ошибка перемещения', buttons: [{type: 'ok'}] });
             }
         }
     }
     
-    Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+    Object.values(columns).forEach(c => c?.classList.remove('drag-over'));
 });
 
 // Utility functions
@@ -291,27 +340,35 @@ function formatTime(timestamp) {
     return date.toLocaleString('ru-RU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// FAB button
-document.getElementById('fab').onclick = () => openEditModal();
+// Event listeners with null checks
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'fab') openEditModal();
+});
 
-// Form handlers
-document.getElementById('taskForm').onsubmit = saveTask;
-document.getElementById('closeModal').onclick = closeModal;
-document.getElementById('cancelBtn').onclick = closeModal;
-document.getElementById('deleteBtn').onclick = deleteTask;
+document.addEventListener('submit', (e) => {
+    if (e.target.id === 'taskForm') saveTask(e);
+});
 
-// Close modal on outside click
-document.getElementById('taskModal').onclick = (e) => {
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'closeModal' || e.target.id === 'cancelBtn') closeModal();
+});
+
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'deleteBtn') deleteTask();
+});
+
+document.addEventListener('click', (e) => {
     if (e.target.id === 'taskModal') closeModal();
-};
+});
 
-// Initialize
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        console.log('DOM ready, loading tasks...');
-        loadTasks();
-    });
-} else {
-    console.log('DOM already ready, loading tasks...');
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM Content Loaded');
     loadTasks();
+});
+
+// Also try immediately if DOM already loaded
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    console.log('DOM already ready');
+    setTimeout(loadTasks, 100);
 }
