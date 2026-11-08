@@ -26,7 +26,7 @@ async function loadTasks() {
             }
         });
         const data = await res.json();
-        tasks = data.data; // Extract tasks array from Supabase response
+        tasks = Array.isArray(data) ? data : (data.data || []); // Handle both array and {data:[]} responses
         renderBoard();
     } catch (e) {
         console.error('Load failed:', e);
