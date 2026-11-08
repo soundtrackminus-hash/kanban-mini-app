@@ -336,7 +336,7 @@ function escapeHtml(text) {
 }
 
 function formatTime(timestamp) {
-    const date = new Date(timestamp * 1000);
+    const date = new Date(timestamp);
     return date.toLocaleString('ru-RU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
