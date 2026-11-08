@@ -142,7 +142,7 @@ async function saveTask(e) {
             await fetch(`${API_BASE}/tasks?id=eq.${editingTask.id}`, {
                 method: 'PUT',
                 headers: headers,
-                body: JSON.stringify({ title, body, status, assignee, priority })
+                body: JSON.stringify({ id: editingTask.id, title, body, status, assignee, priority })
             });
         } else {
             // Create new - generate UUID for id
@@ -246,7 +246,7 @@ function setupDragDrop() {
                                 'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
                                 'Prefer': 'return=representation'
                             },
-                            body: JSON.stringify({ status: newStatus })
+                            body: JSON.stringify({ status: newStatus, id: taskId })
                         });
                         await loadTasks();
                         tg.HapticFeedback.impactOccurred('medium');
