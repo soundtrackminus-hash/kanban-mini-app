@@ -137,7 +137,7 @@ async function saveTask(e) {
     };
     
     try {
-        if (editingTask) {
+        if (editingTask && editingTask.id) {
             // Update existing
             await fetch(`${API_BASE}/tasks?id=eq.${editingTask.id}`, {
                 method: 'PUT',
