@@ -306,4 +306,12 @@ document.getElementById('taskModal').onclick = (e) => {
 };
 
 // Initialize
-loadTasks();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('DOM ready, loading tasks...');
+        loadTasks();
+    });
+} else {
+    console.log('DOM already ready, loading tasks...');
+    loadTasks();
+}
