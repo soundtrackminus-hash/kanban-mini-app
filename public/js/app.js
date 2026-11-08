@@ -19,7 +19,7 @@ const columns = {
 // Load tasks
 async function loadTasks() {
     try {
-        const res = await fetch(API_BASE, {
+        const res = await fetch(`${API_BASE}/tasks`, {
             headers: {
                 'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
                 'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z'
