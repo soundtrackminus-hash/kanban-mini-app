@@ -198,63 +198,119 @@ function updateStats() {
 }
 
 // Drag and drop — делегирование через document, слушатели только один раз
-document.addEventListener('dragstart', (e) => {
+let draggedCard = null;
+let touchStartY = 0;
+
+document.addEventListener('mousedown', (e) => {
     const card = e.target.closest('.task-card');
     if (!card) return;
     draggedCard = card;
     card.classList.add('dragging');
-    e.dataTransfer.effectAllowed = 'move';
 });
 
-document.addEventListener('dragend', (e) => {
-    const card = e.target.closest('.task-card');
-    if (!card) return;
-    card.classList.remove('dragging');
+document.addEventListener('mousemove', (e) => {
+    if (!draggedCard) return;
+    // Проверяем, что мышь над колонкой
+    const col = e.target.closest('[data-status]');
+    if (col) {
+        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+        col.classList.add('drag-over');
+    } else {
+        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+    }
+});
+
+document.addEventListener('mouseup', async (e) => {
+    if (!draggedCard) return;
+    draggedCard.classList.remove('dragging');
+    
+    const taskId = draggedCard.dataset.id;
+    const col = e.target.closest('[data-status]');
+    
+    if (col) {
+        const newStatus = col.dataset.status;
+        const task = tasks.find(t => t.id === taskId);
+        
+        if (task && task.status !== newStatus) {
+            try {
+                await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                        'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify({ status: newStatus, id: taskId })
+                });
+                await loadTasks();
+                tg.HapticFeedback.impactOccurred('medium');
+            } catch (err) {
+                tg.showPopup({ message: 'Ошибка перемещения' });
+            }
+        }
+    }
+    
+    Object.values(columns).forEach(c => c.classList.remove('drag-over'));
     draggedCard = null;
 });
 
-Object.values(columns).forEach(col => {
-    col.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        col.classList.add('drag-over');
-    });
+// Touch support for mobile
+document.addEventListener('touchstart', (e) => {
+    const card = e.target.closest('.task-card');
+    if (!card) return;
+    draggedCard = card;
+    touchStartY = e.touches[0].clientY;
+    setTimeout(() => {
+        if (draggedCard) draggedCard.classList.add('dragging');
+    }, 200);
+}, { passive: true });
 
-    col.addEventListener('dragleave', (e) => {
-        if (!col.contains(e.relatedTarget)) {
-            col.classList.remove('drag-over');
-        }
-    });
+document.addEventListener('touchmove', (e) => {
+    if (!draggedCard) return;
+    e.preventDefault();
+    
+    const touch = e.touches[0];
+    const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
+    
+    Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+    if (col) col.classList.add('drag-over');
+}, { passive: false });
 
-    col.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        col.classList.remove('drag-over');
-
-        if (!draggedCard) return;
-
-        const taskId = draggedCard.dataset.id;
+document.addEventListener('touchend', async (e) => {
+    if (!draggedCard) return;
+    draggedCard.classList.remove('dragging');
+    
+    const touch = e.changedTouches[0];
+    const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
+    const taskId = draggedCard.dataset.id;
+    
+    if (col) {
         const newStatus = col.dataset.status;
-
         const task = tasks.find(t => t.id === taskId);
-        if (!task || task.status === newStatus) return;
-
-        try {
-            await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                    'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                    'Prefer': 'return=representation'
-                },
-                body: JSON.stringify({ status: newStatus, id: taskId })
-            });
-            await loadTasks();
-            tg.HapticFeedback.impactOccurred('medium');
-        } catch (err) {
-            tg.showPopup({ message: 'Ошибка перемещения' });
+        
+        if (task && task.status !== newStatus) {
+            try {
+                await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                        'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify({ status: newStatus, id: taskId })
+                });
+                await loadTasks();
+                tg.HapticFeedback.impactOccurred('medium');
+            } catch (err) {
+                tg.showPopup({ message: 'Ошибка перемещения' });
+            }
         }
-    });
+    }
+    
+    Object.values(columns).forEach(c => c.classList.remove('drag-over'));
+    draggedCard = null;
 });
 
 // Utility functions
