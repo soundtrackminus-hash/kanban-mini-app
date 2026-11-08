@@ -201,74 +201,30 @@ function updateStats() {
 let draggedCard = null;
 let touchStartY = 0;
 
-document.addEventListener('mousedown', (e) => {
-    const card = e.target.closest('.task-card');
-    if (!card) return;
-    draggedCard = card;
-    card.classList.add('dragging');
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (!draggedCard) return;
-    // Проверяем, что мышь над колонкой
-    const col = e.target.closest('[data-status]');
-    if (col) {
-        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
-        col.classList.add('drag-over');
-    } else {
-        Object.values(columns).forEach(c => c.classList.remove('drag-over'));
-    }
-});
-
-document.addEventListener('mouseup', async (e) => {
-    if (!draggedCard) return;
-    draggedCard.classList.remove('dragging');
-    
-    const taskId = draggedCard.dataset.id;
-    const col = e.target.closest('[data-status]');
-    
-    if (col) {
-        const newStatus = col.dataset.status;
-        const task = tasks.find(t => t.id === taskId);
-        
-        if (task && task.status !== newStatus) {
-            try {
-                await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                        'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                        'Prefer': 'return=representation'
-                    },
-                    body: JSON.stringify({ status: newStatus, id: taskId })
-                });
-                await loadTasks();
-                tg.HapticFeedback.impactOccurred('medium');
-            } catch (err) {
-                tg.showPopup({ message: 'Ошибка перемещения' });
-            }
-        }
-    }
-    
-    Object.values(columns).forEach(c => c.classList.remove('drag-over'));
-    draggedCard = null;
-});
-
-// Touch support for mobile
+// Touch events for mobile (Telegram WebView)
 document.addEventListener('touchstart', (e) => {
     const card = e.target.closest('.task-card');
     if (!card) return;
+    
     draggedCard = card;
     touchStartY = e.touches[0].clientY;
-    setTimeout(() => {
-        if (draggedCard) draggedCard.classList.add('dragging');
-    }, 200);
+    
+    // Delay adding dragging class to avoid accidental drags
+    clearTimeout(card._dragTimeout);
+    card._dragTimeout = setTimeout(() => {
+        if (draggedCard === card) {
+            card.classList.add('dragging');
+        }
+    }, 150);
 }, { passive: true });
 
 document.addEventListener('touchmove', (e) => {
     if (!draggedCard) return;
-    e.preventDefault();
+    e.preventDefault(); // Prevent scroll
+    
+    // Clear the delay timeout since we're moving
+    clearTimeout(draggedCard._dragTimeout);
+    draggedCard.classList.add('dragging');
     
     const touch = e.touches[0];
     const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
@@ -279,9 +235,21 @@ document.addEventListener('touchmove', (e) => {
 
 document.addEventListener('touchend', async (e) => {
     if (!draggedCard) return;
+    
+    clearTimeout(draggedCard._dragTimeout);
     draggedCard.classList.remove('dragging');
     
+    // Check if actually dragged (not just tapped)
     const touch = e.changedTouches[0];
+    const deltaX = Math.abs(touch.clientX - (draggedCard._startX || touch.clientX));
+    const deltaY = Math.abs(touch.clientY - touchStartY);
+    
+    // If barely moved, treat as tap
+    if (deltaX < 10 && deltaY < 10) {
+        draggedCard = null;
+        return;
+    }
+    
     const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
     const taskId = draggedCard.dataset.id;
     
@@ -312,6 +280,15 @@ document.addEventListener('touchend', async (e) => {
     Object.values(columns).forEach(c => c.classList.remove('drag-over'));
     draggedCard = null;
 });
+
+// Track start position for tap detection
+document.addEventListener('touchstart', (e) => {
+    const card = e.target.closest('.task-card');
+    if (card) {
+        card._startX = e.touches[0].clientX;
+        card._startY = e.touches[0].clientY;
+    }
+}, { passive: true });
 
 // Utility functions
 function escapeHtml(text) {
