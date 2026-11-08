@@ -7,7 +7,6 @@ if (!tg) {
     tg.expand();
     tg.setHeaderColor('#1a1a2e');
     
-    // Initialize after Telegram is ready
     if (tg.isVersionAtLeast('6.1')) {
         tg.onEvent('ready', () => console.log('Telegram WebApp ready'));
     }
@@ -17,17 +16,10 @@ const API_BASE = 'https://qzytyvfdymcwnoxxvdln.supabase.co/rest/v1';
 let tasks = [];
 let editingTask = null;
 
-// Column mapping
-const columns = {
-    'todo': document.getElementById('todo'),
-    'in_progress': document.getElementById('in_progress'),
-    'blocked': document.getElementById('blocked'),
-    'done': document.getElementById('done'),
-    'canceled': document.getElementById('canceled')
-};
+// Column mapping - initialized after DOM ready
+let columns = {};
 
-console.log('Columns initialized:', columns);
-console.log('Todo column exists:', !!columns.todo);
+console.log('Initializing...');
 
 // Load tasks
 async function loadTasks() {
@@ -53,6 +45,17 @@ async function loadTasks() {
         
         tasks = Array.isArray(data) ? data : (data.data || []);
         console.log('Tasks loaded:', tasks.length);
+        
+        // Initialize columns map after tasks are loaded
+        columns = {
+            'todo': document.getElementById('todo'),
+            'in_progress': document.getElementById('in_progress'),
+            'blocked': document.getElementById('blocked'),
+            'done': document.getElementById('done'),
+            'canceled': document.getElementById('canceled')
+        };
+        console.log('Columns:', columns);
+        console.log('Todo column exists:', !!columns.todo);
         
         renderBoard();
         
@@ -119,11 +122,27 @@ function createCard(task) {
         </div>
     `;
     
-    card.onclick = (e) => {
+    // Click handler
+    card.addEventListener('click', (e) => {
         if (!card.classList.contains('dragging')) {
             openEditModal(task);
         }
-    };
+    });
+    
+    // Drag handlers
+    card.addEventListener('dragstart', (e) => {
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', task.id);
+        console.log('Drag started for task:', task.id);
+    });
+    
+    card.addEventListener('dragend', (e) => {
+        card.classList.remove('dragging');
+        Object.values(columns).forEach(col => col?.classList.remove('drag-over'));
+        console.log('Drag ended');
+    });
+    
     return card;
 }
 
@@ -250,83 +269,54 @@ function updateStats() {
     });
 }
 
-// Drag and drop — touch events only
-let draggedCard = null;
-let dragStartPos = { x: 0, y: 0 };
-
-document.addEventListener('touchstart', (e) => {
-    const card = e.target.closest('.task-card');
-    if (!card) return;
-    
-    dragStartPos.x = e.touches[0].clientX;
-    dragStartPos.y = e.touches[0].clientY;
-    draggedCard = card;
-}, { passive: true });
-
-document.addEventListener('touchmove', (e) => {
-    if (!draggedCard) return;
-    
-    const touch = e.touches[0];
-    const deltaX = Math.abs(touch.clientX - dragStartPos.x);
-    const deltaY = Math.abs(touch.clientY - dragStartPos.y);
-    
-    if (deltaX > 5 || deltaY > 5) {
-        e.preventDefault();
-        draggedCard.classList.add('dragging');
+// Setup drop zones on columns
+function setupDropZones() {
+    Object.values(columns).forEach(col => {
+        if (!col) return;
         
-        const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
-        Object.values(columns).forEach(c => c?.classList.remove('drag-over'));
-        if (col) col.classList.add('drag-over');
-    }
-}, { passive: false });
-
-document.addEventListener('touchend', async (e) => {
-    if (!draggedCard) return;
-    
-    const touch = e.changedTouches[0];
-    const deltaX = Math.abs(touch.clientX - dragStartPos.x);
-    const deltaY = Math.abs(touch.clientY - dragStartPos.y);
-    
-    if (deltaX < 5 && deltaY < 5) {
-        draggedCard.classList.remove('dragging');
-        Object.values(columns).forEach(c => c?.classList.remove('drag-over'));
-        draggedCard = null;
-        return;
-    }
-    
-    draggedCard.classList.remove('dragging');
-    const taskId = draggedCard.dataset.id;
-    draggedCard = null;
-    
-    const col = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-status]');
-    
-    if (col) {
-        const newStatus = col.dataset.status;
-        const task = tasks.find(t => t.id === taskId);
+        col.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            col.classList.add('drag-over');
+        });
         
-        if (task && task.status !== newStatus) {
-            try {
-                await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                        'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
-                        'Prefer': 'return=representation'
-                    },
-                    body: JSON.stringify({ status: newStatus, id: taskId })
-                });
-                await loadTasks();
-                if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
-            } catch (err) {
-                console.error('Move error:', err);
-                if (tg) tg.showPopup({ message: 'Ошибка перемещения', buttons: [{type: 'ok'}] });
+        col.addEventListener('dragleave', (e) => {
+            col.classList.remove('drag-over');
+        });
+        
+        col.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            col.classList.remove('drag-over');
+            
+            const taskId = e.dataTransfer.getData('text/plain');
+            const newStatus = col.dataset.status;
+            
+            console.log('Dropped task', taskId, 'into', newStatus);
+            
+            const task = tasks.find(t => t.id === taskId);
+            
+            if (task && task.status !== newStatus) {
+                try {
+                    await fetch(`${API_BASE}/tasks?id=eq.${taskId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'apikey': 'sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                            'Authorization': 'Bearer sb_publishable_tFOJv36d8OqS9ykGljiZ9g_j94vLO0Z',
+                            'Prefer': 'return=representation'
+                        },
+                        body: JSON.stringify({ status: newStatus, id: taskId })
+                    });
+                    await loadTasks();
+                    if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+                } catch (err) {
+                    console.error('Move error:', err);
+                    if (tg) tg.showPopup({ message: 'Ошибка перемещения', buttons: [{type: 'ok'}] });
+                }
             }
-        }
-    }
-    
-    Object.values(columns).forEach(c => c?.classList.remove('drag-over'));
-});
+        });
+    });
+}
 
 // Utility functions
 function escapeHtml(text) {
@@ -340,35 +330,30 @@ function formatTime(timestamp) {
     return date.toLocaleString('ru-RU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// Event listeners with null checks
-document.addEventListener('click', (e) => {
-    if (e.target.id === 'fab') openEditModal();
-});
-
-document.addEventListener('submit', (e) => {
-    if (e.target.id === 'taskForm') saveTask(e);
-});
-
-document.addEventListener('click', (e) => {
-    if (e.target.id === 'closeModal' || e.target.id === 'cancelBtn') closeModal();
-});
-
-document.addEventListener('click', (e) => {
-    if (e.target.id === 'deleteBtn') deleteTask();
-});
-
-document.addEventListener('click', (e) => {
-    if (e.target.id === 'taskModal') closeModal();
-});
-
-// Initialize when DOM is ready
+// Event listeners
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM Content Loaded');
+    
+    // Set up FAB button
+    const fab = document.getElementById('fab');
+    if (fab) fab.onclick = () => openEditModal();
+    
+    // Form handlers
+    const form = document.getElementById('taskForm');
+    if (form) form.onsubmit = saveTask;
+    
+    // Modal handlers
+    const closeModalBtn = document.getElementById('closeModal');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const deleteBtn = document.getElementById('deleteBtn');
+    const modal = document.getElementById('taskModal');
+    
+    if (closeModalBtn) closeModalBtn.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
+    if (deleteBtn) deleteBtn.onclick = deleteTask;
+    if (modal) modal.onclick = (e) => { if (e.target.id === 'taskModal') closeModal(); };
+    
+    // Load tasks and setup drops
     loadTasks();
+    setTimeout(setupDropZones, 100); // Delay to ensure columns are in place
 });
-
-// Also try immediately if DOM already loaded
-if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    console.log('DOM already ready');
-    setTimeout(loadTasks, 100);
-}
